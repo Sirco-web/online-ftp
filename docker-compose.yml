@@ -1,0 +1,49 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: online-drive
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/data
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:-changeme-use-a-strong-random-secret}
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-1073741824}
+    volumes:
+      # Persistent data volume for database and file storage
+      - drive-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: nginx reverse proxy for SSL termination
+  # Uncomment and configure if you need HTTPS
+  #
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: online-drive-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - app
+  #   restart: unless-stopped
+
+volumes:
+  drive-data:
+    name: online-drive-data
+
+networks:
+  default:
+    name: online-drive-network

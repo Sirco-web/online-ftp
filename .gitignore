@@ -1,0 +1,15 @@
+node_modules/
+.env
+/data/
+*.log
+.DS_Store
+Thumbs.db
+client/node_modules/
+client/dist/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.tus-*
+uploads-temp/
+coverage/

@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  @apply bg-gray-50 text-gray-900;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Uppy overrides */
+.uppy-Dashboard-inner {
+  @apply border-gray-200 !important;
+}
+
+.uppy-Dashboard-AddFiles-title {
+  @apply text-gray-700 !important;
+}
+
+/* File grid item */
+.file-grid-item {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+.file-grid-item:hover {
+  @apply bg-blue-50;
+}
+
+.file-grid-item.selected {
+  @apply bg-blue-100 ring-2 ring-blue-500;
+}
+
+/* Dropdown animation */
+.dropdown-enter {
+  @apply opacity-0 scale-95;
+}
+
+.dropdown-enter-active {
+  @apply opacity-100 scale-100 transition-all duration-150 ease-out;
+}
+
+.dropdown-exit {
+  @apply opacity-100 scale-100;
+}
+
+.dropdown-exit-active {
+  @apply opacity-0 scale-95 transition-all duration-100 ease-in;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin rounded-full border-2 border-gray-300 border-t-blue-600;
+}
