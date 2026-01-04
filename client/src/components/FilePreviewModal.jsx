@@ -11,6 +11,8 @@ import {
   FileText,
   File,
   ExternalLink,
+  Share2,
+  Trash2,
 } from 'lucide-react';
 
 // File type categories
@@ -52,7 +54,7 @@ function getGoogleDocsViewerUrl(fileUrl) {
   return `https://docs.google.com/viewer?url=${encodedUrl}&embedded=true`;
 }
 
-export default function FilePreviewModal({ file, files = [], onClose, onNavigate }) {
+export default function FilePreviewModal({ file, files = [], onClose, onNavigate, onShare, onDelete }) {
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [textContent, setTextContent] = useState('');
@@ -333,6 +335,17 @@ export default function FilePreviewModal({ file, files = [], onClose, onNavigate
             <ExternalLink className="w-5 h-5 text-white" />
           </a>
 
+          {/* Share */}
+          {onShare && (
+            <button
+              onClick={() => onShare(file)}
+              className="p-2 hover:bg-white/10 rounded-lg transition"
+              title="Share"
+            >
+              <Share2 className="w-5 h-5 text-white" />
+            </button>
+          )}
+
           {/* Download */}
           <a
             href={downloadUrl}
@@ -341,6 +354,17 @@ export default function FilePreviewModal({ file, files = [], onClose, onNavigate
           >
             <Download className="w-5 h-5 text-white" />
           </a>
+
+          {/* Delete */}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(file)}
+              className="p-2 hover:bg-white/10 rounded-lg transition"
+              title="Move to trash"
+            >
+              <Trash2 className="w-5 h-5 text-white" />
+            </button>
+          )}
         </div>
       </div>
 

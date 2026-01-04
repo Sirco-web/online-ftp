@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useState } from 'react';
+import { formatBytes } from '../lib/api';
 import SearchBar from './SearchBar';
 import {
   FolderOpen,
@@ -13,6 +14,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  HardDrive,
 } from 'lucide-react';
 
 const navItems = [
@@ -24,7 +26,7 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, storageQuota, storageUsed, hasUnlimitedStorage } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -33,6 +35,10 @@ export default function Layout() {
     await logout();
     navigate('/login');
   };
+  
+  // Calculate storage percentage (0 for unlimited)
+  const storagePercent = hasUnlimitedStorage ? 0 : (storageQuota > 0 ? Math.min(100, (storageUsed / storageQuota) * 100) : 0);
+  const isNearLimit = !hasUnlimitedStorage && storagePercent >= 90;
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -112,6 +118,33 @@ export default function Layout() {
               </>
             )}
           </nav>
+
+          {/* Storage Usage */}
+          <div className="px-4 py-3 border-t border-gray-200">
+            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+              <HardDrive className="w-4 h-4" />
+              <span>Storage</span>
+            </div>
+            {hasUnlimitedStorage ? (
+              <p className="text-xs text-green-600 font-medium">
+                ∞ Unlimited storage
+              </p>
+            ) : (
+              <>
+                <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                  <div 
+                    className={`h-2 rounded-full transition-all ${
+                      isNearLimit ? 'bg-red-500' : 'bg-blue-600'
+                    }`}
+                    style={{ width: `${storagePercent}%` }}
+                  />
+                </div>
+                <p className={`text-xs ${isNearLimit ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                  {formatBytes(storageUsed)} of {formatBytes(storageQuota)} used
+                </p>
+              </>
+            )}
+          </div>
 
           {/* User info */}
           <div className="p-4 border-t border-gray-200">

@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { api, formatBytes } from '../lib/api';
 import Uppy from '@uppy/core';
 import Tus from '@uppy/tus';
-import { Upload, X, Check, AlertCircle, FolderUp } from 'lucide-react';
+import { Upload, X, Check, AlertCircle, FolderUp, HardDrive } from 'lucide-react';
 
 export default function UploadButton({ folderId, onUploadComplete }) {
-  const { csrfToken } = useAuth();
+  const { csrfToken, storageQuota, storageUsed, refreshUser, hasUnlimitedStorage } = useAuth();
   const uppyRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showProgress, setShowProgress] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null); // 'success' | 'error' | null
   const [fileCount, setFileCount] = useState({ total: 0, completed: 0, failed: 0 });
+  const [showQuotaError, setShowQuotaError] = useState(false);
+  const [quotaErrorDetails, setQuotaErrorDetails] = useState(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const csrfTokenRef = useRef(csrfToken);
@@ -89,6 +92,9 @@ export default function UploadButton({ folderId, onUploadComplete }) {
         setUploadStatus('success');
         onUploadCompleteRef.current?.();
       }
+      
+      // Refresh user storage info
+      refreshUser?.();
 
       // Clear all files from Uppy to prevent duplicates on next upload
       const filesToRemove = uppyInstance.getFiles();
@@ -116,7 +122,7 @@ export default function UploadButton({ folderId, onUploadComplete }) {
     };
   }, []); // Empty dependency array - create only once
 
-  const handleFileSelect = (e) => {
+  const handleFileSelect = async (e) => {
     const files = Array.from(e.target.files || []);
     const uppy = uppyRef.current;
     
@@ -125,28 +131,137 @@ export default function UploadButton({ folderId, onUploadComplete }) {
       return;
     }
     
+    // Check storage quota before uploading (skip for unlimited storage)
+    if (!hasUnlimitedStorage) {
+      const totalUploadSize = files.reduce((sum, file) => sum + file.size, 0);
+      const availableSpace = storageQuota - storageUsed;
+      
+      if (totalUploadSize > availableSpace) {
+        setQuotaErrorDetails({
+          uploadSize: totalUploadSize,
+          available: availableSpace,
+          used: storageUsed,
+          quota: storageQuota,
+        });
+        setShowQuotaError(true);
+        
+        // Reset inputs
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (folderInputRef.current) folderInputRef.current.value = '';
+        return;
+      }
+    }
+    
     console.log('Adding files:', files.length);
     
-    files.forEach((file) => {
-      // Get relative path for folder uploads
-      const relativePath = file.webkitRelativePath || file.name;
+    // Check if this is a folder upload (has webkitRelativePath)
+    const isFolderUpload = files.length > 0 && files[0].webkitRelativePath && files[0].webkitRelativePath.includes('/');
+    
+    if (isFolderUpload) {
+      // Create folder structure first
+      const folderCache = {}; // path -> folderId mapping
       
+      // Get the root folder name from the first file's relative path
+      const rootFolderName = files[0].webkitRelativePath.split('/')[0];
+      
+      // Create the root folder
       try {
-        uppy.addFile({
-          name: file.name,
-          type: file.type || 'application/octet-stream',
-          data: file,
-          meta: {
-            filename: file.name,
-            filetype: file.type || 'application/octet-stream',
-            folderId: folderId || '',
-            relativePath: relativePath,
-          },
-        });
+        const rootResult = await api.post('/api/folders', {
+          name: rootFolderName,
+          parentId: folderId || null,
+        }, csrfTokenRef.current);
+        folderCache[rootFolderName] = rootResult.folder.id;
+        console.log(`Created root folder: ${rootFolderName} with id ${rootResult.folder.id}`);
       } catch (err) {
-        console.error('Error adding file:', file.name, err);
+        console.error('Error creating root folder:', err);
+        // Folder might already exist, try to find it
       }
-    });
+      
+      // Create all subfolders
+      const folderPaths = new Set();
+      files.forEach(file => {
+        const parts = file.webkitRelativePath.split('/');
+        // Build all intermediate folder paths
+        for (let i = 1; i < parts.length; i++) {
+          const folderPath = parts.slice(0, i).join('/');
+          folderPaths.add(folderPath);
+        }
+      });
+      
+      // Sort folder paths by depth to create parent folders first
+      const sortedPaths = Array.from(folderPaths).sort((a, b) => 
+        a.split('/').length - b.split('/').length
+      );
+      
+      for (const folderPath of sortedPaths) {
+        if (folderCache[folderPath]) continue;
+        
+        const parts = folderPath.split('/');
+        const folderName = parts[parts.length - 1];
+        const parentPath = parts.slice(0, -1).join('/');
+        
+        let parentId = null;
+        if (parentPath) {
+          parentId = folderCache[parentPath];
+        } else {
+          parentId = folderId || null;
+        }
+        
+        try {
+          const result = await api.post('/api/folders', {
+            name: folderName,
+            parentId: parentId,
+          }, csrfTokenRef.current);
+          folderCache[folderPath] = result.folder.id;
+          console.log(`Created folder: ${folderPath} with id ${result.folder.id}`);
+        } catch (err) {
+          console.error('Error creating folder:', folderPath, err);
+        }
+      }
+      
+      // Now add files with their correct folder IDs
+      files.forEach((file) => {
+        const relativePath = file.webkitRelativePath;
+        const parts = relativePath.split('/');
+        const folderPath = parts.slice(0, -1).join('/');
+        const targetFolderId = folderCache[folderPath] || folderId || '';
+        
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            data: file,
+            meta: {
+              filename: file.name,
+              filetype: file.type || 'application/octet-stream',
+              folderId: targetFolderId,
+              relativePath: relativePath,
+            },
+          });
+        } catch (err) {
+          console.error('Error adding file:', file.name, err);
+        }
+      });
+    } else {
+      // Regular file upload
+      files.forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            data: file,
+            meta: {
+              filename: file.name,
+              filetype: file.type || 'application/octet-stream',
+              folderId: folderId || '',
+              relativePath: file.name,
+            },
+          });
+        } catch (err) {
+          console.error('Error adding file:', file.name, err);
+        }
+      });
+    }
 
     // Reset input
     if (fileInputRef.current) {
@@ -247,6 +362,65 @@ export default function UploadButton({ folderId, onUploadComplete }) {
                 <span className="text-sm">Some files failed</span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Storage Quota Error Modal */}
+      {showQuotaError && quotaErrorDetails && (
+        <div className="modal-backdrop" onClick={() => setShowQuotaError(false)}>
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <HardDrive className="w-8 h-8 text-red-600" />
+              </div>
+            </div>
+            
+            <h2 className="text-xl font-semibold text-gray-900 text-center mb-2">
+              Storage Limit Exceeded
+            </h2>
+            
+            <p className="text-gray-600 text-center mb-4">
+              You don't have enough storage space to upload these files.
+            </p>
+            
+            <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Upload size:</span>
+                <span className="font-medium text-gray-900">{formatBytes(quotaErrorDetails.uploadSize)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Available space:</span>
+                <span className="font-medium text-gray-900">{formatBytes(quotaErrorDetails.available)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Storage used:</span>
+                <span className="font-medium text-gray-900">
+                  {formatBytes(quotaErrorDetails.used)} of {formatBytes(quotaErrorDetails.quota)}
+                </span>
+              </div>
+            </div>
+            
+            <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
+              <div 
+                className="h-3 rounded-full bg-red-500"
+                style={{ width: `${Math.min(100, (quotaErrorDetails.used / quotaErrorDetails.quota) * 100)}%` }}
+              />
+            </div>
+            
+            <p className="text-sm text-gray-500 text-center mb-4">
+              Delete some files or empty your trash to free up space.
+            </p>
+            
+            <button
+              onClick={() => setShowQuotaError(false)}
+              className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition"
+            >
+              Got it
+            </button>
           </div>
         </div>
       )}

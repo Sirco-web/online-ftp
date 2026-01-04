@@ -388,6 +388,135 @@ router.get('/:type/:id', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * Copy an item (create a duplicate)
+ * POST /api/items/copy
+ */
+router.post('/copy', requireAuth, async (req, res, next) => {
+  try {
+    const { itemId, itemType } = req.body;
+    const userId = req.user.id;
+    
+    if (!itemId || !itemType) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    if (!['file', 'folder'].includes(itemType)) {
+      return res.status(400).json({ error: 'Invalid item type' });
+    }
+    
+    // Check view permission (need to be able to see it to copy it)
+    if (!canView(userId, itemType, itemId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    if (itemType === 'file') {
+      // Copy file
+      const file = db.prepare('SELECT * FROM files WHERE id = ?').get(itemId);
+      if (!file) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+      
+      const newFileId = crypto.randomUUID();
+      const newVersionId = crypto.randomUUID();
+      const copyName = generateCopyName(file.name, 'files', file.folder_id, userId);
+      
+      // Get the current version's blob info
+      const version = db.prepare('SELECT * FROM file_versions WHERE id = ?').get(file.current_version_id);
+      
+      // Create the file copy (pointing to same blob - deduplication)
+      db.prepare(`
+        INSERT INTO files (id, owner_id, folder_id, name, mime, size, current_version_id, starred)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      `).run(newFileId, userId, file.folder_id, copyName, file.mime, file.size, newVersionId);
+      
+      // Create version entry
+      if (version) {
+        db.prepare(`
+          INSERT INTO file_versions (id, file_id, blob_id, size, sha256, created_by)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(newVersionId, newFileId, version.blob_id, version.size, version.sha256, userId);
+      }
+      
+      await logActivity({
+        actorId: userId,
+        action: 'copy',
+        itemType: 'file',
+        itemId: newFileId,
+        itemName: copyName,
+        meta: { originalId: itemId, originalName: file.name },
+        ip: req.ip,
+      });
+      
+      res.json({ success: true, newId: newFileId, name: copyName });
+      
+    } else {
+      // Copy folder (shallow - just the folder itself, not contents)
+      const folder = db.prepare('SELECT * FROM folders WHERE id = ?').get(itemId);
+      if (!folder) {
+        return res.status(404).json({ error: 'Folder not found' });
+      }
+      
+      const newFolderId = crypto.randomUUID();
+      const copyName = generateCopyName(folder.name, 'folders', folder.parent_id, userId);
+      
+      db.prepare(`
+        INSERT INTO folders (id, owner_id, parent_id, name, starred)
+        VALUES (?, ?, ?, ?, 0)
+      `).run(newFolderId, userId, folder.parent_id, copyName);
+      
+      await logActivity({
+        actorId: userId,
+        action: 'copy',
+        itemType: 'folder',
+        itemId: newFolderId,
+        itemName: copyName,
+        meta: { originalId: itemId, originalName: folder.name },
+        ip: req.ip,
+      });
+      
+      res.json({ success: true, newId: newFolderId, name: copyName });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Helper: Generate a unique copy name
+ */
+function generateCopyName(originalName, table, parentId, userId) {
+  const parentColumn = table === 'files' ? 'folder_id' : 'parent_id';
+  
+  // Extract base name and extension
+  let baseName = originalName;
+  let extension = '';
+  
+  const lastDot = originalName.lastIndexOf('.');
+  if (lastDot > 0 && table === 'files') {
+    baseName = originalName.substring(0, lastDot);
+    extension = originalName.substring(lastDot);
+  }
+  
+  let copyName = `${baseName} - Copy${extension}`;
+  let counter = 1;
+  
+  while (true) {
+    const exists = db.prepare(`
+      SELECT id FROM ${table} 
+      WHERE owner_id = ? AND ${parentColumn} ${parentId ? '= ?' : 'IS NULL'} 
+      AND name = ? AND trashed_at IS NULL
+    `).get(...(parentId ? [userId, parentId, copyName] : [userId, copyName]));
+    
+    if (!exists) break;
+    
+    counter++;
+    copyName = `${baseName} - Copy (${counter})${extension}`;
+  }
+  
+  return copyName;
+}
+
+/**
  * Helper: Get breadcrumbs for a folder
  */
 function getBreadcrumbs(folderId) {

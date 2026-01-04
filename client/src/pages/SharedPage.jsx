@@ -68,10 +68,14 @@ export default function SharedPage() {
           <FileList
             items={items}
             viewMode="list"
+            selectedItems={[]}
+            isSelectMode={false}
             onItemClick={handleItemClick}
             onItemDoubleClick={handleItemDoubleClick}
             onContextMenu={() => {}}
             onSelect={() => {}}
+            onToggleSelect={() => {}}
+            onRangeSelect={() => {}}
           />
         )}
       </div>

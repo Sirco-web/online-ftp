@@ -11,6 +11,22 @@ import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
 
+// Hardcoded owner email - only this user can be owner
+const HARDCODED_OWNER_EMAIL = 'timco307@gmail.com';
+
+// Helper to get app setting
+function getSetting(key, defaultValue = null) {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+  return row ? row.value : defaultValue;
+}
+
+// Get owner PIN from settings (with fallback default)
+function getOwnerPin() {
+  return getSetting('owner_pin', '2529');
+}
+
+// Stricter rate limiting for auth endpoints
+
 // Stricter rate limiting for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -46,6 +62,28 @@ router.post('/login', authLimiter, async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     
+    // Check if user is banned
+    if (user.status === 'banned') {
+      return res.status(403).json({ error: 'Your account has been banned. Please contact the administrator.' });
+    }
+    
+    // Check if user is suspended
+    if (user.status === 'suspended') {
+      return res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
+    }
+    
+    // Check if signin is enabled (admins and owners can always sign in)
+    const signinEnabled = getSetting('signin_enabled', 'true') === 'true';
+    if (!signinEnabled && user.role === 'user') {
+      return res.status(403).json({ error: 'Sign in is currently disabled' });
+    }
+    
+    // Check maintenance mode (admins and owners can still login)
+    const maintenanceMode = getSetting('maintenance_mode', 'false') === 'true';
+    if (maintenanceMode && user.role === 'user') {
+      return res.status(503).json({ error: 'The system is under maintenance. Please try again later.' });
+    }
+    
     // Verify password
     const validPassword = await argon2.verify(user.password_hash, password);
     
@@ -71,6 +109,10 @@ router.post('/login', authLimiter, async (req, res, next) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        status: user.status || 'active',
+        storage_quota: user.role === 'admin' || user.role === 'owner' ? -1 : (user.storage_quota || 5368709120),
+        storage_used: user.storage_used || 0,
+        isOwner: user.email === HARDCODED_OWNER_EMAIL,
       },
       csrfToken: req.session.csrfToken,
     });
@@ -82,7 +124,19 @@ router.post('/login', authLimiter, async (req, res, next) => {
 // Register new user
 router.post('/register', authLimiter, async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, ownerPin } = req.body;
+    
+    // Check if signups are enabled
+    const signupsEnabled = getSetting('signups_enabled', 'true') === 'true';
+    if (!signupsEnabled) {
+      return res.status(403).json({ error: 'Registration is currently disabled' });
+    }
+    
+    // Check owner pin requirement
+    const requirePin = getSetting('require_owner_pin', 'true') === 'true';
+    if (requirePin && ownerPin !== getOwnerPin()) {
+      return res.status(403).json({ error: 'Invalid owner PIN' });
+    }
     
     // Validate input
     if (!email || !password) {
@@ -115,10 +169,16 @@ router.post('/register', authLimiter, async (req, res, next) => {
     // Create user
     const userId = crypto.randomUUID();
     
+    // Determine role - hardcoded owner email gets owner role
+    const role = email.toLowerCase() === HARDCODED_OWNER_EMAIL ? 'owner' : 'user';
+    
+    // Get default storage quota (admins/owners get unlimited = -1)
+    const defaultQuota = role === 'owner' ? -1 : parseInt(getSetting('default_storage_quota', '5368709120'));
+    
     db.prepare(`
-      INSERT INTO users (id, email, password_hash, role)
-      VALUES (?, ?, ?, 'user')
-    `).run(userId, email.toLowerCase(), passwordHash);
+      INSERT INTO users (id, email, password_hash, role, status, storage_quota, storage_used)
+      VALUES (?, ?, ?, ?, 'active', ?, 0)
+    `).run(userId, email.toLowerCase(), passwordHash, role, defaultQuota);
     
     // Create session
     req.session.userId = userId;
@@ -131,13 +191,17 @@ router.post('/register', authLimiter, async (req, res, next) => {
       ip: req.ip,
     });
     
-    logger.info(`New user registered: ${email}`);
+    logger.info(`New user registered: ${email} (${role})`);
     
     res.status(201).json({
       user: {
         id: userId,
         email: email.toLowerCase(),
-        role: 'user',
+        role: role,
+        status: 'active',
+        storage_quota: defaultQuota,
+        storage_used: 0,
+        isOwner: email.toLowerCase() === HARDCODED_OWNER_EMAIL,
       },
       csrfToken: req.session.csrfToken,
     });
@@ -167,8 +231,19 @@ router.post('/logout', requireAuth, async (req, res) => {
 
 // Get current user
 router.get('/me', requireAuth, (req, res) => {
+  // Get fresh user data with storage info
+  const user = db.prepare('SELECT id, email, role, status, storage_quota, storage_used FROM users WHERE id = ?').get(req.user.id);
+  
+  // Admins and owners have unlimited storage (-1)
+  const storageQuota = user.role === 'admin' || user.role === 'owner' ? -1 : (user.storage_quota || 5368709120);
+  
   res.json({
-    user: req.user,
+    user: {
+      ...user,
+      storage_quota: storageQuota,
+      storage_used: user.storage_used || 0,
+      isOwner: user.email === HARDCODED_OWNER_EMAIL,
+    },
     csrfToken: req.session.csrfToken,
   });
 });

@@ -13,6 +13,7 @@ import {
   Code,
   Star,
   MoreVertical,
+  Check,
 } from 'lucide-react';
 
 const iconMap = {
@@ -46,17 +47,44 @@ function FileIcon({ type, mime, className = "w-5 h-5" }) {
   return <Icon className={`${className} ${colorClass}`} />;
 }
 
-function ListItem({ item, selected, onClick, onDoubleClick, onContextMenu }) {
+function SelectionCheckbox({ checked, onChange, isSelectionMode }) {
+  return (
+    <div 
+      className={`
+        flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all
+        ${checked 
+          ? 'bg-blue-600 border-blue-600 text-white' 
+          : 'border-gray-300 hover:border-blue-400 bg-white'
+        }
+        ${isSelectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+      `}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+    >
+      {checked && <Check className="w-3.5 h-3.5" />}
+    </div>
+  );
+}
+
+function ListItem({ item, selected, isSelected, isSelectionMode, onClick, onDoubleClick, onContextMenu, onSelect }) {
   return (
     <div
       className={`
-        flex items-center gap-4 px-4 py-3 cursor-pointer border-b border-gray-100
-        ${selected ? 'bg-blue-50' : 'hover:bg-gray-50'}
+        group flex items-center gap-4 px-4 py-3 cursor-pointer border-b border-gray-100
+        ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}
       `}
-      onClick={() => onClick(item)}
+      onClick={(e) => onClick(e, item)}
       onDoubleClick={() => onDoubleClick(item)}
       onContextMenu={(e) => onContextMenu(e, item)}
     >
+      <SelectionCheckbox 
+        checked={isSelected} 
+        onChange={() => onSelect(item)} 
+        isSelectionMode={isSelectionMode}
+      />
+      
       <FileIcon type={item.type} mime={item.mime} className="w-6 h-6 flex-shrink-0" />
       
       <div className="flex-1 min-w-0">
@@ -75,31 +103,30 @@ function ListItem({ item, selected, onClick, onDoubleClick, onContextMenu }) {
       <div className="hidden md:block w-40 text-sm text-gray-500">
         {format(new Date(item.updated_at || item.created_at), 'MMM d, yyyy')}
       </div>
-      
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onContextMenu(e, item);
-        }}
-        className="p-1 hover:bg-gray-200 rounded opacity-0 group-hover:opacity-100 transition"
-      >
-        <MoreVertical className="w-5 h-5 text-gray-400" />
-      </button>
     </div>
   );
 }
 
-function GridItem({ item, selected, onClick, onDoubleClick, onContextMenu }) {
+function GridItem({ item, selected, isSelected, isSelectionMode, onClick, onDoubleClick, onContextMenu, onSelect }) {
   return (
     <div
       className={`
         group relative flex flex-col items-center p-4 rounded-xl cursor-pointer
-        ${selected ? 'bg-blue-100 ring-2 ring-blue-500' : 'hover:bg-gray-100'}
+        ${isSelected ? 'bg-blue-100 ring-2 ring-blue-500' : 'hover:bg-gray-100'}
       `}
-      onClick={() => onClick(item)}
+      onClick={(e) => onClick(e, item)}
       onDoubleClick={() => onDoubleClick(item)}
       onContextMenu={(e) => onContextMenu(e, item)}
     >
+      {/* Selection checkbox */}
+      <div className="absolute top-2 left-2">
+        <SelectionCheckbox 
+          checked={isSelected} 
+          onChange={() => onSelect(item)} 
+          isSelectionMode={isSelectionMode}
+        />
+      </div>
+      
       <div className="relative w-16 h-16 flex items-center justify-center mb-3">
         <FileIcon type={item.type} mime={item.mime} className="w-12 h-12" />
         {item.starred === 1 && (
@@ -132,11 +159,47 @@ export default function FileList({
   items,
   viewMode,
   selectedItem,
+  selectedItems = [],
+  isSelectMode = false,
   onItemClick,
   onItemDoubleClick,
   onContextMenu,
   onSelect,
+  onToggleSelect,
+  onRangeSelect,
 }) {
+  // Show selection UI if explicitly in select mode OR if there are selected items
+  const isSelectionMode = isSelectMode || selectedItems.length > 0;
+  
+  const handleClick = (e, item) => {
+    // Ctrl/Cmd + click for toggle selection
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      onToggleSelect?.(item);
+      return;
+    }
+    
+    // Shift + click for range selection
+    if (e.shiftKey && selectedItem) {
+      e.preventDefault();
+      onRangeSelect?.(item);
+      return;
+    }
+    
+    // Normal click - if in selection mode, toggle select
+    if (isSelectionMode) {
+      onToggleSelect?.(item);
+      return;
+    }
+    
+    // Otherwise just select for details
+    onSelect?.(item);
+  };
+  
+  const handleCheckboxSelect = (item) => {
+    onToggleSelect?.(item);
+  };
+
   if (viewMode === 'grid') {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -145,9 +208,12 @@ export default function FileList({
             key={`${item.type}-${item.id}`}
             item={item}
             selected={selectedItem?.id === item.id}
-            onClick={onSelect}
+            isSelected={selectedItems.some(i => i.id === item.id && i.type === item.type)}
+            isSelectionMode={isSelectionMode}
+            onClick={handleClick}
             onDoubleClick={onItemDoubleClick}
             onContextMenu={onContextMenu}
+            onSelect={handleCheckboxSelect}
           />
         ))}
       </div>
@@ -158,11 +224,11 @@ export default function FileList({
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-4 px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-500">
+        <div className="w-5"></div>
         <div className="w-6"></div>
         <div className="flex-1">Name</div>
         <div className="hidden sm:block w-24">Size</div>
         <div className="hidden md:block w-40">Modified</div>
-        <div className="w-8"></div>
       </div>
       
       {/* Items */}
@@ -172,9 +238,12 @@ export default function FileList({
             key={`${item.type}-${item.id}`}
             item={item}
             selected={selectedItem?.id === item.id}
-            onClick={onSelect}
+            isSelected={selectedItems.some(i => i.id === item.id && i.type === item.type)}
+            isSelectionMode={isSelectionMode}
+            onClick={handleClick}
             onDoubleClick={onItemDoubleClick}
             onContextMenu={onContextMenu}
+            onSelect={handleCheckboxSelect}
           />
         ))}
       </div>

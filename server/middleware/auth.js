@@ -10,11 +10,22 @@ export function requireAuth(req, res, next) {
   }
   
   // Load user from database
-  const user = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(req.session.userId);
+  const user = db.prepare('SELECT id, email, role, status FROM users WHERE id = ?').get(req.session.userId);
   
   if (!user) {
     req.session.destroy();
     return res.status(401).json({ error: 'User not found' });
+  }
+  
+  // Check if user is suspended or banned
+  if (user.status === 'banned') {
+    req.session.destroy();
+    return res.status(403).json({ error: 'Your account has been banned' });
+  }
+  
+  if (user.status === 'suspended') {
+    req.session.destroy();
+    return res.status(403).json({ error: 'Your account has been suspended' });
   }
   
   req.user = user;
@@ -22,10 +33,10 @@ export function requireAuth(req, res, next) {
 }
 
 /**
- * Middleware to require admin role
+ * Middleware to require admin role (admins and owners)
  */
 export function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'owner')) {
     logger.warn(`Admin access denied for user ${req.user?.id}`);
     return res.status(403).json({ error: 'Admin access required' });
   }
@@ -37,8 +48,8 @@ export function requireAdmin(req, res, next) {
  */
 export function optionalAuth(req, res, next) {
   if (req.session?.userId) {
-    const user = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(req.session.userId);
-    if (user) {
+    const user = db.prepare('SELECT id, email, role, status FROM users WHERE id = ?').get(req.session.userId);
+    if (user && user.status === 'active') {
       req.user = user;
     }
   }

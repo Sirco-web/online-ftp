@@ -57,6 +57,24 @@ const tusServer = new TusServer({
       throw { status_code: 401, body: 'Authentication required' };
     }
     
+    // Check user storage quota
+    const user = db.prepare('SELECT id, role, storage_quota, storage_used FROM users WHERE id = ?').get(session.userId);
+    if (!user) {
+      throw { status_code: 401, body: 'User not found' };
+    }
+    
+    // Admins and owners have unlimited storage (skip quota check)
+    if (user.role !== 'admin' && user.role !== 'owner') {
+      const storageQuota = user.storage_quota || 5368709120; // 5GB default
+      const storageUsed = user.storage_used || 0;
+      const uploadSize = upload.size || 0;
+      
+      if (storageUsed + uploadSize > storageQuota) {
+        logger.warn(`Upload rejected - user ${session.userId} over storage quota`);
+        throw { status_code: 413, body: 'Storage quota exceeded. Please delete some files or contact an administrator.' };
+      }
+    }
+    
     // Extract metadata
     const metadata = upload.metadata || {};
     const filename = metadata.filename || 'unnamed';
@@ -70,11 +88,6 @@ const tusServer = new TusServer({
     
     // If uploading to a folder, check permission
     if (folderId && folderId !== 'null' && folderId !== 'undefined') {
-      const user = db.prepare('SELECT id FROM users WHERE id = ?').get(session.userId);
-      if (!user) {
-        throw { status_code: 401, body: 'User not found' };
-      }
-      
       if (!canEdit(session.userId, 'folder', folderId)) {
         throw { status_code: 403, body: 'Access denied to folder' };
       }
@@ -204,6 +217,11 @@ const tusServer = new TusServer({
             INSERT INTO file_versions (id, file_id, blob_id, size, sha256, created_by)
             VALUES (?, ?, ?, ?, ?, ?)
           `).run(versionId, fileId, blobId, size, sha256, userId);
+          
+          // Update user storage used
+          db.prepare(`
+            UPDATE users SET storage_used = storage_used + ? WHERE id = ?
+          `).run(size, userId);
         }
       }
       

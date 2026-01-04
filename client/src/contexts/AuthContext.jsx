@@ -31,6 +31,16 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, [checkAuth]);
 
+  // Refresh user data (useful for updating storage info)
+  const refreshUser = async () => {
+    try {
+      const data = await api.get('/api/auth/me');
+      setUser(data.user);
+    } catch (err) {
+      console.error('Failed to refresh user:', err);
+    }
+  };
+
   const login = async (email, password) => {
     const data = await api.post('/api/auth/login', { email, password }, csrfToken);
     setUser(data.user);
@@ -38,8 +48,8 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const register = async (email, password) => {
-    const data = await api.post('/api/auth/register', { email, password }, csrfToken);
+  const register = async (email, password, ownerPin) => {
+    const data = await api.post('/api/auth/register', { email, password, ownerPin }, csrfToken);
     setUser(data.user);
     setCsrfToken(data.csrfToken);
     return data;
@@ -60,8 +70,13 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    refreshUser,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
+    isAdmin: user?.role === 'admin' || user?.role === 'owner',
+    isOwner: user?.isOwner || user?.role === 'owner',
+    storageQuota: user?.storage_quota || 5368709120,
+    storageUsed: user?.storage_used || 0,
+    hasUnlimitedStorage: user?.storage_quota === -1,
   };
 
   return (

@@ -144,6 +144,11 @@ router.delete('/:type/:id/purge', requireAuth, async (req, res, next) => {
         }
       }
       
+      // Update user storage (decrease by file size)
+      db.prepare(`
+        UPDATE users SET storage_used = MAX(0, storage_used - ?) WHERE id = ?
+      `).run(item.size || 0, userId);
+      
       // Delete versions
       db.prepare('DELETE FROM file_versions WHERE file_id = ?').run(id);
       
@@ -155,7 +160,7 @@ router.delete('/:type/:id/purge', requireAuth, async (req, res, next) => {
       
     } else {
       // Permanently delete folder and all contents
-      await purgeFolderRecursive(id);
+      await purgeFolderRecursive(id, userId);
     }
     
     await logActivity({
@@ -188,7 +193,11 @@ router.delete('/empty', requireAuth, async (req, res, next) => {
     const trashedFolders = db.prepare('SELECT id FROM folders WHERE owner_id = ? AND trashed_at IS NOT NULL').all(userId);
     
     // Purge files
+    let totalSizeDeleted = 0;
     for (const file of trashedFiles) {
+      const fileData = db.prepare('SELECT size FROM files WHERE id = ?').get(file.id);
+      totalSizeDeleted += fileData?.size || 0;
+      
       const versions = db.prepare('SELECT blob_id FROM file_versions WHERE file_id = ?').all(file.id);
       
       for (const version of versions) {
@@ -205,8 +214,13 @@ router.delete('/empty', requireAuth, async (req, res, next) => {
     
     // Purge folders (this handles nested folders)
     for (const folder of trashedFolders) {
-      await purgeFolderRecursive(folder.id);
+      totalSizeDeleted += await purgeFolderRecursive(folder.id, userId);
     }
+    
+    // Update user storage
+    db.prepare(`
+      UPDATE users SET storage_used = MAX(0, storage_used - ?) WHERE id = ?
+    `).run(totalSizeDeleted, userId);
     
     await logActivity({
       actorId: userId,
@@ -244,18 +258,22 @@ function restoreFolderContents(folderId) {
   }
 }
 
-async function purgeFolderRecursive(folderId) {
+async function purgeFolderRecursive(folderId, userId) {
+  let totalSizeDeleted = 0;
+  
   // First, recursively handle subfolders
   const subfolders = db.prepare('SELECT id FROM folders WHERE parent_id = ?').all(folderId);
   
   for (const subfolder of subfolders) {
-    await purgeFolderRecursive(subfolder.id);
+    totalSizeDeleted += await purgeFolderRecursive(subfolder.id, userId);
   }
   
   // Delete files in this folder
-  const files = db.prepare('SELECT id FROM files WHERE folder_id = ?').all(folderId);
+  const files = db.prepare('SELECT id, size FROM files WHERE folder_id = ?').all(folderId);
   
   for (const file of files) {
+    totalSizeDeleted += file.size || 0;
+    
     const versions = db.prepare('SELECT blob_id FROM file_versions WHERE file_id = ?').all(file.id);
     
     for (const version of versions) {
@@ -275,6 +293,8 @@ async function purgeFolderRecursive(folderId) {
   
   // Delete folder
   db.prepare('DELETE FROM folders WHERE id = ?').run(folderId);
+  
+  return totalSizeDeleted;
 }
 
 export default router;

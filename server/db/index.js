@@ -35,8 +35,18 @@ export async function initDatabase() {
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+      role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin', 'owner')),
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'banned')),
+      storage_quota INTEGER DEFAULT 5368709120,
+      storage_used INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    
+    -- App settings table
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
     );
     
@@ -138,6 +148,49 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_activity_item ON activity_log(item_type, item_id);
     CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
   `);
+  
+  // Add columns if they don't exist (for existing databases)
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN storage_quota INTEGER DEFAULT 5368709120`);
+  } catch (e) { /* column exists */ }
+  
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN storage_used INTEGER DEFAULT 0`);
+  } catch (e) { /* column exists */ }
+  
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+  } catch (e) { /* column exists */ }
+  
+  // Initialize default settings
+  const defaultSettings = [
+    ['signups_enabled', 'true'],
+    ['signin_enabled', 'true'],
+    ['default_storage_quota', '5368709120'], // 5GB in bytes
+    ['maintenance_mode', 'false'],
+    ['require_owner_pin', 'true'],
+    ['owner_pin', '2529'], // Default owner PIN
+  ];
+  
+  const insertSetting = db.prepare(`
+    INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)
+  `);
+  
+  for (const [key, value] of defaultSettings) {
+    insertSetting.run(key, value);
+  }
+  
+  // Create hardcoded admin if doesn't exist
+  const adminEmail = 'timco307@gmail.com';
+  const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail);
+  
+  if (!existingAdmin) {
+    // We'll create this user when they first register with the correct pin
+    logger.info('Hardcoded admin email set: ' + adminEmail);
+  } else {
+    // Ensure the owner has the 'owner' role
+    db.prepare("UPDATE users SET role = 'owner' WHERE email = ?").run(adminEmail);
+  }
   
   logger.info('Database tables created/verified');
 }
