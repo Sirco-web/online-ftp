@@ -91,7 +91,7 @@ export default function PublicSharePage() {
     setError('');
     
     try {
-      const url = new URL(`/api/public/${token}`, window.location.origin);
+      const url = new URL(`/s/${token}`, window.location.origin);
       if (pathParam) url.searchParams.set('path', pathParam);
       if (pwd) url.searchParams.set('password', pwd);
       
@@ -118,7 +118,7 @@ export default function PublicSharePage() {
         const category = getFileCategory(data.mime);
         if (category === 'text') {
           try {
-            const previewUrl = new URL(`/api/public/${token}/preview`, window.location.origin);
+            const previewUrl = new URL(`/s/${token}/preview`, window.location.origin);
             if (pwd) previewUrl.searchParams.set('password', pwd);
             const textRes = await fetch(previewUrl);
             if (textRes.ok) {
@@ -144,7 +144,7 @@ export default function PublicSharePage() {
   };
 
   const handleDownload = async (item) => {
-    const url = new URL(`/api/public/${token}/download`, window.location.origin);
+    const url = new URL(`/s/${token}/download`, window.location.origin);
     if (item?.type === 'folder') {
       url.searchParams.set('path', pathParam ? `${pathParam}/${item.name}` : item.name);
     } else if (pathParam) {
@@ -248,7 +248,7 @@ export default function PublicSharePage() {
   // Render file preview page
   if (shareInfo?.itemType === 'file') {
     const category = getFileCategory(shareInfo.mime);
-    const previewUrl = `/api/public/${token}/preview${password ? `?password=${encodeURIComponent(password)}` : ''}`;
+    const previewUrl = `/s/${token}/preview${password ? `?password=${encodeURIComponent(password)}` : ''}`;
     const Icon = getFileIcon(shareInfo.mime);
     
     const renderPreview = () => {
