@@ -14,6 +14,9 @@ import {
   AlertCircle,
   ChevronRight,
   Home,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
 } from 'lucide-react';
 
 const FILE_ICONS = {
@@ -25,6 +28,22 @@ const FILE_ICONS = {
   'application/zip': Archive,
   'application/x-rar': Archive,
 };
+
+const FILE_CATEGORIES = {
+  image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp'],
+  pdf: ['application/pdf'],
+  video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
+  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
+  text: ['text/plain', 'text/html', 'text/css', 'text/javascript', 'application/json', 'text/markdown', 'text/csv', 'text/xml', 'application/xml'],
+};
+
+function getFileCategory(mimeType) {
+  if (!mimeType) return 'unknown';
+  for (const [category, types] of Object.entries(FILE_CATEGORIES)) {
+    if (types.includes(mimeType)) return category;
+  }
+  return 'unknown';
+}
 
 function getFileIcon(mimeType) {
   if (!mimeType) return File;
@@ -58,6 +77,11 @@ export default function PublicSharePage() {
   const [items, setItems] = useState([]);
   const [breadcrumbs, setBreadcrumbs] = useState([]);
   
+  // File preview state
+  const [textContent, setTextContent] = useState('');
+  const [zoom, setZoom] = useState(100);
+  const [rotation, setRotation] = useState(0);
+  
   useEffect(() => {
     loadShare();
   }, [token, pathParam]);
@@ -67,7 +91,7 @@ export default function PublicSharePage() {
     setError('');
     
     try {
-      const url = new URL(`/api/public/${token}`, window.location.origin);
+      const url = new URL(\`/api/public/\${token}\`, window.location.origin);
       if (pathParam) url.searchParams.set('path', pathParam);
       if (pwd) url.searchParams.set('password', pwd);
       
@@ -85,9 +109,27 @@ export default function PublicSharePage() {
       }
       
       setNeedsPassword(false);
-      setShareInfo(data.share);
-      setItems(data.items || (data.file ? [data.file] : []));
+      setShareInfo(data);
+      setItems(data.items || []);
       setBreadcrumbs(data.breadcrumbs || []);
+      
+      // Load text content for text files
+      if (data.itemType === 'file') {
+        const category = getFileCategory(data.mime);
+        if (category === 'text') {
+          try {
+            const previewUrl = new URL(\`/api/public/\${token}/preview\`, window.location.origin);
+            if (pwd) previewUrl.searchParams.set('password', pwd);
+            const textRes = await fetch(previewUrl);
+            if (textRes.ok) {
+              const text = await textRes.text();
+              setTextContent(text);
+            }
+          } catch (err) {
+            console.error('Failed to load text content:', err);
+          }
+        }
+      }
     } catch (err) {
       setError('Failed to load share');
     } finally {
@@ -102,9 +144,9 @@ export default function PublicSharePage() {
   };
 
   const handleDownload = async (item) => {
-    const url = new URL(`/api/public/${token}/download`, window.location.origin);
-    if (item.type === 'folder') {
-      url.searchParams.set('path', pathParam ? `${pathParam}/${item.name}` : item.name);
+    const url = new URL(\`/api/public/\${token}/download\`, window.location.origin);
+    if (item?.type === 'folder') {
+      url.searchParams.set('path', pathParam ? \`\${pathParam}/\${item.name}\` : item.name);
     } else if (pathParam) {
       url.searchParams.set('path', pathParam);
     }
@@ -116,7 +158,7 @@ export default function PublicSharePage() {
   const handleNavigate = (item) => {
     if (item.type !== 'folder') return;
     
-    const newPath = pathParam ? `${pathParam}/${item.name}` : item.name;
+    const newPath = pathParam ? \`\${pathParam}/\${item.name}\` : item.name;
     const url = new URL(window.location.href);
     url.searchParams.set('path', newPath);
     window.location.href = url.toString();
@@ -135,6 +177,10 @@ export default function PublicSharePage() {
     url.searchParams.set('path', newPath);
     window.location.href = url.toString();
   };
+
+  const handleZoomIn = () => setZoom(z => Math.min(z + 25, 200));
+  const handleZoomOut = () => setZoom(z => Math.max(z - 25, 25));
+  const handleRotate = () => setRotation(r => (r + 90) % 360);
 
   if (loading) {
     return (
@@ -199,23 +245,176 @@ export default function PublicSharePage() {
     );
   }
 
+  // Render file preview page
+  if (shareInfo?.itemType === 'file') {
+    const category = getFileCategory(shareInfo.mime);
+    const previewUrl = \`/api/public/\${token}/preview\${password ? \`?password=\${encodeURIComponent(password)}\` : ''}\`;
+    const Icon = getFileIcon(shareInfo.mime);
+    
+    const renderPreview = () => {
+      switch (category) {
+        case 'image':
+          return (
+            <div className="flex items-center justify-center h-full overflow-auto p-4 bg-gray-900">
+              <img
+                src={previewUrl}
+                alt={shareInfo.itemName}
+                className="max-w-full max-h-full object-contain transition-transform duration-200"
+                style={{
+                  transform: \`scale(\${zoom / 100}) rotate(\${rotation}deg)\`,
+                }}
+              />
+            </div>
+          );
+
+        case 'pdf':
+          return (
+            <iframe
+              src={previewUrl}
+              className="w-full h-full"
+              title={shareInfo.itemName}
+            />
+          );
+
+        case 'video':
+          return (
+            <div className="flex items-center justify-center h-full p-4 bg-gray-900">
+              <video
+                src={previewUrl}
+                controls
+                autoPlay
+                className="max-w-full max-h-full"
+              >
+                Your browser does not support video playback.
+              </video>
+            </div>
+          );
+
+        case 'audio':
+          return (
+            <div className="flex flex-col items-center justify-center h-full p-4 bg-gray-900">
+              <div className="w-48 h-48 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mb-8 shadow-lg">
+                <Music className="w-20 h-20 text-white" />
+              </div>
+              <p className="text-white text-lg font-medium mb-4">{shareInfo.itemName}</p>
+              <audio
+                src={previewUrl}
+                controls
+                autoPlay
+                className="w-full max-w-md"
+              >
+                Your browser does not support audio playback.
+              </audio>
+            </div>
+          );
+
+        case 'text':
+          return (
+            <div className="h-full overflow-auto p-4 bg-gray-50">
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto text-sm font-mono whitespace-pre-wrap min-h-full">
+                {textContent || 'Loading...'}
+              </pre>
+            </div>
+          );
+
+        default:
+          return (
+            <div className="flex flex-col items-center justify-center h-full bg-gray-50">
+              <Icon className="w-24 h-24 text-gray-400 mb-4" />
+              <p className="text-gray-700 text-lg mb-2">{shareInfo.itemName}</p>
+              <p className="text-gray-500 text-sm mb-6">{formatBytes(shareInfo.size)}</p>
+              <button
+                onClick={() => handleDownload()}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg flex items-center gap-2 transition"
+              >
+                <Download className="w-5 h-5" />
+                Download
+              </button>
+            </div>
+          );
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="font-semibold text-gray-900">{shareInfo.itemName}</h1>
+                <p className="text-sm text-gray-500">
+                  {formatBytes(shareInfo.size)} • Shared file
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Zoom controls for images */}
+              {category === 'image' && (
+                <>
+                  <button
+                    onClick={handleZoomOut}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition"
+                    title="Zoom out"
+                  >
+                    <ZoomOut className="w-5 h-5 text-gray-600" />
+                  </button>
+                  <span className="text-sm text-gray-600 min-w-[3rem] text-center">{zoom}%</span>
+                  <button
+                    onClick={handleZoomIn}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition"
+                    title="Zoom in"
+                  >
+                    <ZoomIn className="w-5 h-5 text-gray-600" />
+                  </button>
+                  <button
+                    onClick={handleRotate}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition"
+                    title="Rotate"
+                  >
+                    <RotateCw className="w-5 h-5 text-gray-600" />
+                  </button>
+                  <div className="w-px h-6 bg-gray-200 mx-2" />
+                </>
+              )}
+              
+              <button
+                onClick={() => handleDownload()}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Preview Area */}
+        <main className="flex-1 overflow-hidden">
+          {renderPreview()}
+        </main>
+      </div>
+    );
+  }
+
+  // Render folder view
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              {shareInfo?.itemType === 'folder' ? (
-                <Folder className="w-5 h-5 text-white" />
-              ) : (
-                <File className="w-5 h-5 text-white" />
-              )}
+              <Folder className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-semibold text-gray-900">{shareInfo?.name}</h1>
+              <h1 className="font-semibold text-gray-900">{shareInfo?.itemName}</h1>
               <p className="text-sm text-gray-500">
-                Shared by {shareInfo?.ownerEmail}
+                Shared folder
               </p>
             </div>
           </div>
@@ -232,7 +431,7 @@ export default function PublicSharePage() {
                 className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
               >
                 <Home className="w-4 h-4" />
-                {shareInfo?.name}
+                {shareInfo?.itemName}
               </button>
               {breadcrumbs.map((crumb, index) => (
                 <span key={index} className="flex items-center gap-1">
@@ -281,7 +480,7 @@ export default function PublicSharePage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {items.map((item) => {
-                  const Icon = item.type === 'folder' ? Folder : getFileIcon(item.mime_type);
+                  const ItemIcon = item.type === 'folder' ? Folder : getFileIcon(item.mime_type);
                   
                   return (
                     <tr key={item.id} className="hover:bg-gray-50">
@@ -290,9 +489,9 @@ export default function PublicSharePage() {
                           onClick={() => item.type === 'folder' ? handleNavigate(item) : handleDownload(item)}
                           className="flex items-center gap-3 text-left hover:text-blue-600 transition"
                         >
-                          <Icon className={`w-5 h-5 ${
+                          <ItemIcon className={\`w-5 h-5 \${
                             item.type === 'folder' ? 'text-blue-500' : 'text-gray-400'
-                          }`} />
+                          }\`} />
                           <span className="font-medium text-gray-900">{item.name}</span>
                         </button>
                       </td>

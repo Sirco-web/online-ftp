@@ -273,7 +273,7 @@ export default function UploadButton({ folderId, onUploadComplete }) {
   };
 
   return (
-    <div className="relative flex items-center gap-2">
+    <div className="relative flex items-center gap-1">
       {/* File upload input - accepts all file types */}
       <input
         ref={fileInputRef}
@@ -299,19 +299,20 @@ export default function UploadButton({ folderId, onUploadComplete }) {
       {/* Upload files button */}
       <label
         htmlFor="file-upload"
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg cursor-pointer transition"
+        className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg cursor-pointer transition text-sm"
+        title="Upload files"
       >
-        <Upload className="w-5 h-5" />
-        <span className="hidden sm:inline">Upload Files</span>
+        <Upload className="w-4 h-4" />
+        <span className="hidden md:inline">Upload</span>
       </label>
 
       {/* Upload folder button */}
       <label
         htmlFor="folder-upload"
-        className="flex items-center gap-2 px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg cursor-pointer transition"
+        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer transition"
+        title="Upload folder"
       >
         <FolderUp className="w-5 h-5" />
-        <span className="hidden sm:inline">Upload Folder</span>
       </label>
 
       {/* Upload progress overlay */}

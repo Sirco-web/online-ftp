@@ -6,6 +6,7 @@ import FileList from '../components/FileList';
 import Breadcrumbs from '../components/Breadcrumbs';
 import UploadButton from '../components/UploadButton';
 import NewFolderModal from '../components/NewFolderModal';
+import RenameModal from '../components/RenameModal';
 import DetailsDrawer from '../components/DetailsDrawer';
 import ShareModal from '../components/ShareModal';
 import MoveModal from '../components/MoveModal';
@@ -44,6 +45,7 @@ export default function DrivePage() {
   const [selectedItems, setSelectedItems] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
 
   const loadItems = useCallback(async () => {
     try {
@@ -286,15 +288,7 @@ export default function DrivePage() {
           setShowDetailsDrawer(true);
           break;
         case 'rename':
-          const newName = prompt('Enter new name:', selectedItem.name);
-          if (newName && newName !== selectedItem.name) {
-            await api.post('/api/items/rename', {
-              itemId: selectedItem.id,
-              itemType: selectedItem.type,
-              newName,
-            }, csrfToken);
-            handleRefresh();
-          }
+          setShowRenameModal(true);
           break;
         case 'star':
           await api.post('/api/items/star', {
@@ -338,53 +332,69 @@ export default function DrivePage() {
     handleRefresh();
   };
 
+  const handleRename = async (item, newName) => {
+    await api.post('/api/items/rename', {
+      itemId: item.id,
+      itemType: item.type,
+      newName,
+    }, csrfToken);
+    handleRefresh();
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 px-6 py-4 border-b border-gray-200 bg-white">
-        <div className="flex items-center justify-between">
-          <Breadcrumbs items={breadcrumbs} />
+      <div className="flex-shrink-0 px-4 sm:px-6 py-3 border-b border-gray-200 bg-white">
+        <div className="flex items-center justify-between gap-4">
+          {/* Breadcrumbs */}
+          <div className="flex-1 min-w-0">
+            <Breadcrumbs items={breadcrumbs} />
+          </div>
           
-          <div className="flex items-center gap-2">
+          {/* Actions */}
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Select Mode Toggle */}
             <button
               onClick={handleToggleSelectMode}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition ${
+              className={`p-2 rounded-lg transition ${
                 isSelectMode 
                   ? 'bg-blue-100 text-blue-700' 
-                  : 'text-gray-700 hover:bg-gray-100'
+                  : 'text-gray-600 hover:bg-gray-100'
               }`}
               title={isSelectMode ? "Exit select mode" : "Select files"}
             >
               <CheckSquare className="w-5 h-5" />
-              <span className="hidden sm:inline">{isSelectMode ? 'Cancel' : 'Select'}</span>
             </button>
 
             {/* Select All when in select mode */}
             {isSelectMode && items.length > 0 && (
               <button
                 onClick={handleSelectAll}
-                className="px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition text-sm"
+                className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition text-xs font-medium"
               >
-                {selectedItems.length === items.length ? 'Deselect All' : 'Select All'}
+                {selectedItems.length === items.length ? 'Deselect' : 'All'}
               </button>
             )}
 
+            {/* Separator */}
+            {!isSelectMode && items.filter(i => i.type === 'file').length > 0 && (
+              <div className="hidden sm:block w-px h-6 bg-gray-200" />
+            )}
+
             {/* Download Folder Button */}
-            {items.filter(i => i.type === 'file').length > 0 && (
-              <div className="relative">
-                <div className="flex items-center">
+            {!isSelectMode && items.filter(i => i.type === 'file').length > 0 && (
+              <div className="relative hidden sm:block">
+                <div className="flex items-center bg-gray-50 rounded-lg">
                   <button
                     onClick={handleDownloadFolder}
-                    className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-l-lg transition border-r border-gray-200"
-                    title="Download all files in folder"
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-l-lg transition"
+                    title="Download all files"
                   >
                     <Download className="w-5 h-5" />
-                    <span className="hidden sm:inline">Download</span>
                   </button>
                   <button
                     onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                    className="px-2 py-2 text-gray-700 hover:bg-gray-100 rounded-r-lg transition"
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-r-lg transition border-l border-gray-200"
                     title="Download options"
                   >
                     <ChevronDown className="w-4 h-4" />
@@ -418,39 +428,46 @@ export default function DrivePage() {
               </div>
             )}
 
+            {/* Refresh */}
             <button
               onClick={handleRefresh}
-              className="p-2 hover:bg-gray-100 rounded-lg transition"
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
               title="Refresh"
             >
-              <RefreshCw className={`w-5 h-5 text-gray-600 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
             
-            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            {/* View Toggle */}
+            <div className="hidden sm:flex items-center bg-gray-100 rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white shadow' : ''}`}
+                className={`p-1.5 rounded transition ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                 title="List view"
               >
                 <List className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white shadow' : ''}`}
+                className={`p-1.5 rounded transition ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                 title="Grid view"
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Separator */}
+            <div className="hidden sm:block w-px h-6 bg-gray-200" />
             
+            {/* New Folder */}
             <button
               onClick={() => setShowNewFolderModal(true)}
-              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              title="New folder"
             >
               <FolderPlus className="w-5 h-5" />
-              <span className="hidden sm:inline">New folder</span>
             </button>
             
+            {/* Upload */}
             <UploadButton 
               folderId={folderId} 
               onUploadComplete={handleUploadComplete}
@@ -533,6 +550,16 @@ export default function DrivePage() {
         <ShareModal
           item={selectedItem}
           onClose={() => setShowShareModal(false)}
+          isOverlay={showPreviewModal}
+        />
+      )}
+
+      {showRenameModal && selectedItem && (
+        <RenameModal
+          item={selectedItem}
+          onClose={() => setShowRenameModal(false)}
+          onRename={handleRename}
+          isOverlay={showPreviewModal}
         />
       )}
 

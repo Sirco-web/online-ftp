@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Folder, AlertCircle } from 'lucide-react';
 
-export default function NewFolderModal({ onClose, onCreate }) {
+export default function NewFolderModal({ onClose, onCreate, isOverlay = false }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export default function NewFolderModal({ onClose, onCreate }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={isOverlay ? "modal-backdrop-high" : "modal-backdrop"} onClick={onClose}>
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
         onClick={(e) => e.stopPropagation()}

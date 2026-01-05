@@ -14,7 +14,23 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-export default function ShareModal({ item, onClose }) {
+// Helper to convert localhost URLs to current domain
+function convertToCurrentDomain(url) {
+  if (!url) return url;
+  try {
+    const urlObj = new URL(url);
+    // Replace the host with current origin
+    return `${window.location.origin}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+  } catch {
+    // If not a valid URL, just prepend origin to path
+    if (url.startsWith('/')) {
+      return `${window.location.origin}${url}`;
+    }
+    return url;
+  }
+}
+
+export default function ShareModal({ item, onClose, isOverlay = false }) {
   const { csrfToken } = useAuth();
   const [shares, setShares] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +52,16 @@ export default function ShareModal({ item, onClose }) {
       const data = await api.get(`/api/share/${item.type}/${item.id}`);
       setShares(data.shares || []);
       
-      // Find existing link share
+      // Find existing link share and convert to current domain
       const existingLink = data.shares?.find(s => s.share_type === 'link');
-      setLinkShare(existingLink || null);
+      if (existingLink) {
+        setLinkShare({
+          ...existingLink,
+          link: convertToCurrentDomain(existingLink.link),
+        });
+      } else {
+        setLinkShare(null);
+      }
     } catch (err) {
       console.error('Failed to load shares:', err);
     } finally {
@@ -82,7 +105,7 @@ export default function ShareModal({ item, onClose }) {
       
       setLinkShare({
         ...data,
-        link: data.link,
+        link: convertToCurrentDomain(data.link),
       });
       loadShares();
     } catch (err) {
@@ -129,7 +152,7 @@ export default function ShareModal({ item, onClose }) {
   const userShares = shares.filter(s => s.share_type === 'user');
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={isOverlay ? "modal-backdrop-high" : "modal-backdrop"} onClick={onClose}>
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}

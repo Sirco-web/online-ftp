@@ -78,7 +78,7 @@ function FolderTree({
   );
 }
 
-export default function MoveModal({ items, currentFolderId, onClose, onMove }) {
+export default function MoveModal({ items, currentFolderId, onClose, onMove, isOverlay = false }) {
   const { csrfToken } = useAuth();
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -156,7 +156,7 @@ export default function MoveModal({ items, currentFolderId, onClose, onMove }) {
     : `${items.length} items`;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={isOverlay ? "modal-backdrop-high" : "modal-backdrop"} onClick={onClose}>
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}

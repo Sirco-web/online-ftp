@@ -192,15 +192,26 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="flex-shrink-0 h-16 bg-white border-b border-gray-200 flex items-center px-4 gap-4">
+        <header className="flex-shrink-0 h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-4 shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5 text-gray-600" />
           </button>
           
-          <SearchBar />
+          <div className="flex-1 flex justify-center">
+            <SearchBar />
+          </div>
+          
+          {/* Quick user indicator for mobile */}
+          <div className="lg:hidden flex items-center">
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <span className="text-blue-700 text-sm font-medium">
+                {user?.email?.[0]?.toUpperCase() || 'U'}
+              </span>
+            </div>
+          </div>
         </header>
 
         {/* Page content */}
