@@ -91,7 +91,7 @@ export default function PublicSharePage() {
     setError('');
     
     try {
-      const url = new URL(\`/api/public/\${token}\`, window.location.origin);
+      const url = new URL(`/api/public/${token}`, window.location.origin);
       if (pathParam) url.searchParams.set('path', pathParam);
       if (pwd) url.searchParams.set('password', pwd);
       
@@ -118,7 +118,7 @@ export default function PublicSharePage() {
         const category = getFileCategory(data.mime);
         if (category === 'text') {
           try {
-            const previewUrl = new URL(\`/api/public/\${token}/preview\`, window.location.origin);
+            const previewUrl = new URL(`/api/public/${token}/preview`, window.location.origin);
             if (pwd) previewUrl.searchParams.set('password', pwd);
             const textRes = await fetch(previewUrl);
             if (textRes.ok) {
@@ -144,9 +144,9 @@ export default function PublicSharePage() {
   };
 
   const handleDownload = async (item) => {
-    const url = new URL(\`/api/public/\${token}/download\`, window.location.origin);
+    const url = new URL(`/api/public/${token}/download`, window.location.origin);
     if (item?.type === 'folder') {
-      url.searchParams.set('path', pathParam ? \`\${pathParam}/\${item.name}\` : item.name);
+      url.searchParams.set('path', pathParam ? `${pathParam}/${item.name}` : item.name);
     } else if (pathParam) {
       url.searchParams.set('path', pathParam);
     }
@@ -158,7 +158,7 @@ export default function PublicSharePage() {
   const handleNavigate = (item) => {
     if (item.type !== 'folder') return;
     
-    const newPath = pathParam ? \`\${pathParam}/\${item.name}\` : item.name;
+    const newPath = pathParam ? `${pathParam}/${item.name}` : item.name;
     const url = new URL(window.location.href);
     url.searchParams.set('path', newPath);
     window.location.href = url.toString();
@@ -248,7 +248,7 @@ export default function PublicSharePage() {
   // Render file preview page
   if (shareInfo?.itemType === 'file') {
     const category = getFileCategory(shareInfo.mime);
-    const previewUrl = \`/api/public/\${token}/preview\${password ? \`?password=\${encodeURIComponent(password)}\` : ''}\`;
+    const previewUrl = `/api/public/${token}/preview${password ? `?password=${encodeURIComponent(password)}` : ''}`;
     const Icon = getFileIcon(shareInfo.mime);
     
     const renderPreview = () => {
@@ -261,7 +261,7 @@ export default function PublicSharePage() {
                 alt={shareInfo.itemName}
                 className="max-w-full max-h-full object-contain transition-transform duration-200"
                 style={{
-                  transform: \`scale(\${zoom / 100}) rotate(\${rotation}deg)\`,
+                  transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
                 }}
               />
             </div>
@@ -489,9 +489,9 @@ export default function PublicSharePage() {
                           onClick={() => item.type === 'folder' ? handleNavigate(item) : handleDownload(item)}
                           className="flex items-center gap-3 text-left hover:text-blue-600 transition"
                         >
-                          <ItemIcon className={\`w-5 h-5 \${
+                          <ItemIcon className={`w-5 h-5 ${
                             item.type === 'folder' ? 'text-blue-500' : 'text-gray-400'
-                          }\`} />
+                          }`} />
                           <span className="font-medium text-gray-900">{item.name}</span>
                         </button>
                       </td>

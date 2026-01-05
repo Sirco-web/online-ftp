@@ -40,16 +40,17 @@ export default function UploadButton({ folderId, onUploadComplete }) {
       restrictions: {
         maxFileSize: 1024 * 1024 * 1024, // 1GB per file
       },
-      debug: true, // Enable debug logging
+      debug: false, // Disable debug logging for performance
     })
     .use(Tus, {
       endpoint: '/files/',
-      chunkSize: 5 * 1024 * 1024, // 5MB chunks
+      chunkSize: 20 * 1024 * 1024, // 20MB chunks for faster uploads
       retryDelays: [0, 1000, 3000, 5000],
       withCredentials: true,
-      limit: 1, // Upload one file at a time to prevent race conditions
+      limit: 5, // Upload 5 files concurrently for faster batch uploads
+      parallelUploads: 3, // Upload 3 chunks in parallel per file
       removeFingerprintOnSuccess: true, // Clear stored upload info on success
-      storeFingerprintForResuming: false, // Don't try to resume uploads
+      storeFingerprintForResuming: true, // Enable resumable uploads
       headers: () => ({
         'X-CSRF-Token': csrfTokenRef.current || '',
       }),
